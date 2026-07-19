@@ -12,7 +12,7 @@ import numpy as np
 from io import BytesIO
 from datetime import datetime
 
-from .models import Product, Transaction, TransactionItem
+from .models import Product, CheckoutSession, CartItem
 
 
 @csrf_exempt
@@ -34,10 +34,10 @@ def detect(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Find product by model_label
+        # Find product by sku
         product = Product.objects.filter(
-            model_label=label,
-            active=True
+            sku=label,
+            is_active=True
         ).first()
         
         if not product:
@@ -50,7 +50,7 @@ def detect(request):
             'id': product.id,
             'name': product.name,
             'price': float(product.price),
-            'label': product.model_label,
+            'sku': product.sku,
             'confidence': confidence
         }, status=status.HTTP_200_OK)
         
@@ -87,15 +87,15 @@ def add_to_cart(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Get transaction
-        transaction = Transaction.objects.get(id=transaction_id)
+        # Get session
+        session = CheckoutSession.objects.get(id=transaction_id)
         
         # Get product
         product = Product.objects.get(id=product_id)
         
         # Create or update cart item
-        cart_item, created = TransactionItem.objects.get_or_create(
-            transaction=transaction,
+        cart_item, created = CartItem.objects.get_or_create(
+            session=session,
             product=product,
             defaults={
                 'quantity': quantity,
@@ -108,8 +108,8 @@ def add_to_cart(request):
             cart_item.quantity += quantity
             cart_item.save()
         
-        # Update transaction total
-        update_transaction_total(transaction)
+        # Update session total
+        update_session_total(session)
         
         return JsonResponse({
             'success': True,
@@ -117,13 +117,13 @@ def add_to_cart(request):
             'product_name': product.name,
             'quantity': cart_item.quantity,
             'unit_price': float(cart_item.unit_price),
-            'total_amount': float(transaction.total_amount),
-            'item_count': transaction.items.count()
+            'total_amount': float(session.total_amount),
+            'item_count': session.items.count()
         }, status=status.HTTP_201_CREATED)
         
-    except Transaction.DoesNotExist:
+    except CheckoutSession.DoesNotExist:
         return JsonResponse(
-            {'error': 'Transaction not found'},
+            {'error': 'Checkout session not found'},
             status=status.HTTP_404_NOT_FOUND
         )
     except Product.DoesNotExist:
@@ -150,9 +150,9 @@ def cart(request, transaction_id):
     Returns cart contents for a transaction
     """
     try:
-        transaction = Transaction.objects.get(id=transaction_id)
+        session = CheckoutSession.objects.get(id=transaction_id)
         
-        items = TransactionItem.objects.filter(transaction=transaction).values()
+        items = CartItem.objects.filter(session=session).values()
         items_list = []
         
         for item in items:
@@ -167,16 +167,16 @@ def cart(request, transaction_id):
             })
         
         return JsonResponse({
-            'transaction_id': transaction.id,
-            'status': transaction.status,
+            'session_id': session.id,
+            'status': session.status,
             'items': items_list,
-            'total_amount': float(transaction.total_amount),
+            'total_amount': float(session.total_amount),
             'item_count': len(items_list)
         }, status=status.HTTP_200_OK)
         
-    except Transaction.DoesNotExist:
+    except CheckoutSession.DoesNotExist:
         return JsonResponse(
-            {'error': 'Transaction not found'},
+            {'error': 'Checkout session not found'},
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
@@ -194,20 +194,20 @@ def latest_transaction(request):
     Creates a new one if none exists
     """
     try:
-        # Try to get existing open transaction
-        transaction = Transaction.objects.filter(status='open').last()
+        # Try to get existing active session
+        session = CheckoutSession.objects.filter(status='active').last()
         
-        if not transaction:
-            # Create new transaction if none exists
-            transaction = Transaction.objects.create(status='open')
-            print(f"[API] Created new transaction: {transaction.id}")
+        if not session:
+            # Create new session if none exists
+            session = CheckoutSession.objects.create(status='active')
+            print(f"[API] Created new session: {session.id}")
         
         return JsonResponse({
-            'id': transaction.id,
-            'status': transaction.status,
-            'total_amount': float(transaction.total_amount),
-            'created_at': transaction.created_at.isoformat(),
-            'item_count': transaction.items.count()
+            'id': session.id,
+            'status': session.status,
+            'total_amount': float(session.total_amount),
+            'created_at': session.started_at.isoformat(),
+            'item_count': session.items.count()
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -229,23 +229,22 @@ def checkout_complete(request):
         transaction_id = data.get('transaction_id')
         payment_method = data.get('payment_method', 'card')
         
-        transaction = Transaction.objects.get(id=transaction_id)
-        transaction.status = 'paid'
-        transaction.save()
+        session = CheckoutSession.objects.get(id=transaction_id)
+        session.mark_completed(payment_method=payment_method)
         
-        print(f"[CHECKOUT] Transaction {transaction_id} marked as paid")
+        print(f"[CHECKOUT] Session {transaction_id} marked as completed")
         
         return JsonResponse({
             'success': True,
-            'transaction_id': transaction.id,
-            'status': transaction.status,
-            'total_amount': float(transaction.total_amount),
+            'session_id': session.id,
+            'status': session.status,
+            'total_amount': float(session.get_total()),
             'payment_method': payment_method
         }, status=status.HTTP_200_OK)
         
-    except Transaction.DoesNotExist:
+    except CheckoutSession.DoesNotExist:
         return JsonResponse(
-            {'error': 'Transaction not found'},
+            {'error': 'Checkout session not found'},
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
@@ -255,16 +254,16 @@ def checkout_complete(request):
         )
 
 
-def update_transaction_total(transaction):
+def update_session_total(session):
     """
-    Recalculate and update transaction total amount
+    Recalculate and update session total amount
     """
     total = 0
-    for item in transaction.items.all():
+    for item in session.items.all():
         total += item.quantity * item.unit_price
     
-    transaction.total_amount = total
-    transaction.save()
+    session.total_amount = total
+    session.save()
 
 
 def video_feed(request):

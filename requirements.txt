@@ -1,0 +1,61 @@
+# Django & Framework
+Django==4.2.7
+django-rest-framework==3.14.0
+django-cors-headers==4.3.1
+django-environ==0.21.0
+django-filter==23.4
+djangorestframework-simplejwt==5.3.2
+
+# Database
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.23
+
+# Real-time & Async
+channels==4.0.0
+channels-redis==4.1.0
+aioredis==2.0.1
+
+# Computer Vision
+opencv-python==4.8.1.78
+ultralytics==8.0.227
+numpy==1.24.3
+scipy==1.11.4
+
+# Image Processing
+Pillow==10.1.0
+scikit-image==0.22.0
+
+# Machine Learning
+tensorflow==2.14.0
+torch==2.1.1
+torchvision==0.16.1
+
+# Utilities
+requests==2.31.0
+python-dateutil==2.8.2
+pytz==2023.3
+celery==5.3.4
+redis==5.0.1
+python-magic==0.4.27
+
+# API & Serialization
+marshmallow==3.20.1
+jsonschema==4.20.0
+
+# Payment Integration
+stripe==7.4.0
+
+# Monitoring & Logging
+loguru==0.7.2
+sentry-sdk==1.38.0
+
+# Development
+pytest==7.4.3
+pytest-django==4.7.0
+black==23.12.1
+flake8==6.1.0
+isort==5.13.2
+
+# Production
+gunicorn==21.2.0
+whitenoise==6.6.0
